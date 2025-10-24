@@ -84,7 +84,6 @@ This script will:
 Edit the filtering configuration at the top of `github_repo_analysis.py`:
 
 ```python
-# === FILTERING CONFIGURATION - Change these to filter PRs ===
 TARGET_LANGUAGES = ["Python", "JavaScript", "TypeScript"]  # Only repos with these languages
 TITLE_KEYWORDS = ["fix", "bug", "feature", "update", "refactor"]  # Only PRs with these words in title
 BODY_KEYWORDS = ["performance", "optimization", "security", "test"]  # Only PRs with these words in body
@@ -157,32 +156,4 @@ Contains filtered merged pull requests that occurred between the V1 and V2 datas
 - Uses case-insensitive matching
 - Configurable via `TITLE_KEYWORDS` and `BODY_KEYWORDS` lists in the script
 
-### Filter Configuration Examples
 
-**Python-focused analysis:**
-```python
-TARGET_LANGUAGES = ["Python"]
-TITLE_KEYWORDS = ["bug", "fix", "feature"]
-BODY_KEYWORDS = ["performance", "optimization"]
-```
-
-**JavaScript/TypeScript analysis:**
-```python
-TARGET_LANGUAGES = ["JavaScript", "TypeScript"]
-TITLE_KEYWORDS = ["refactor", "update", "enhancement"]
-BODY_KEYWORDS = ["security", "test", "coverage"]
-```
-
-**Security-focused analysis:**
-```python
-TARGET_LANGUAGES = []  # No language filter
-TITLE_KEYWORDS = ["security", "vulnerability", "CVE"]
-BODY_KEYWORDS = ["exploit", "patch", "vulnerability"]
-```
-
-## Data Privacy and Usage
-
-- This tool only accesses public repository data
-- No private code or sensitive information is stored
-- All data processing is done locally
-- Generated CSV files contain only public repository metadata and pull request information
