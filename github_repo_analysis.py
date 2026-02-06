@@ -8,20 +8,38 @@ import time
 load_dotenv()
 
 # === FILTERING CONFIGURATION - Change these to filter PRs ===
-TARGET_LANGUAGES = ["Python", "JavaScript", "TypeScript"]  # Only repos with these languages
+TARGET_LANGUAGES = ["JavaScript"] # ["Python", "JavaScript", "TypeScript"]  # Only repos with these languages
 TITLE_KEYWORDS = ["fix", "bug", "feature", "update", "refactor"]  # Only PRs with these words in title
 BODY_KEYWORDS = ["performance", "optimization", "security", "test"]  # Only PRs with these words in body
 LANGUAGE_THRESHOLD = 10  # Minimum percentage of code in target language (10%)
+STARS_THRESHOLD = 25  # Minimum stars a repo must have
+COLLABORATOR_THRESHOLD = 5  # Minimum collaborators a repo must have
 
 def get_repo_languages(repo_name):
     headers = {
         'Accept': 'application/vnd.github.v3+json',
-        'Authorization': 'Bearer ' + os.getenv('GITHUB_PAT'),
+        'Authorization': 'Bearer ' + os.getenv('GITHUB_TOKEN'),
         'User-Agent': 'STARCODER ANALYSIS APP',
         'X-GitHub-Api-Version': '2022-11-28',
     }
     
     url = f"https://api.github.com/repos/{repo_name}/languages"
+    response = requests.get(url, headers=headers)
+    time.sleep(1)  # Rate limiting
+    
+    if response.status_code == 200:
+        return response.json()
+    return {}
+
+def get_repo_stars(repo_name):
+    headers = {
+        'Accept': 'application/vnd.github.v3+json',
+        'Authorization': 'Bearer ' + os.getenv('GITHUB_TOKEN'),
+        'User-Agent': 'STARCODER ANALYSIS APP',
+        'X-GitHub-Api-Version': '2022-11-28',
+    }
+    
+    url = f"https://api.github.com/repos/{repo_name}/stargazers"
     response = requests.get(url, headers=headers)
     time.sleep(1)  # Rate limiting
     
@@ -49,6 +67,18 @@ def has_target_language(repo_name):
     
     return False  # Not enough of any target language  
 
+def has_target_stars(repo_name):
+    stars = get_repo_stars(repo_name)
+    if not stars:
+        return False  # Can't get star info = skip
+    
+    star_count = len(stars)
+    
+    return star_count >= STARS_THRESHOLD
+
+def has_targets(repo_name):
+    return has_target_language(repo_name) and has_target_stars(repo_name) 
+
 def has_keywords(text, keywords):
     if not keywords:
         return True  # No filter = include all
@@ -62,19 +92,28 @@ def has_keywords(text, keywords):
 repo_v1 = {}
 repo_v2 = {}
 
-with open('starcoder_v1_repos.csv', newline='') as csvfile:
+with open('test_v1_repos.csv', newline='') as csvfile:
     reader = csv.DictReader(csvfile)
     for row in reader:
-        repo_v1[row['repo_name']] = row['commit_hash']
+        print("row1:", row)
+        repo_v1[row['repo_name'].strip()] = row['commit_hash'].strip()
 
-with open('starcoder_v2_repos.csv', newline='') as csvfile:
+print(f"Loaded {len(repo_v1)} repos from v1 dataset.")
+print(repo_v1)
+
+with open('test_v2_repos.csv', newline='') as csvfile:
     reader = csv.DictReader(csvfile)
     for row in reader:
-        repo_v2[row['repo_name']] = row['commit_hash']
+        print("row2:", row)
+        repo_v2[row['repo_name'].strip()] = row['commit_hash'].strip()
+
+print(f"Loaded {len(repo_v2)} repos from v2 dataset.")
+print(repo_v2)
 
 overlapped_repos = []
-
+print("Finding overlapped repos...")
 for repo_name, v1_hash in repo_v1.items():
+    print(f"Checking repo: {repo_name}", repo_name in repo_v2)
     if repo_name in repo_v2:
         v2_hash = repo_v2[repo_name]
 
@@ -84,24 +123,25 @@ for repo_name, v1_hash in repo_v1.items():
             'v2_hash': v2_hash
         }
         overlapped_repos.append(repo_data)
+        print(f"Found overlapped repo: {repo_name}")
 
 repo_dates = []
 
 headers = {
     'Accept': 'application/vnd.github.v3+json',
-    'Authorization': 'Bearer ' + os.getenv('GITHUB_PAT'),
+    'Authorization': 'Bearer ' + os.getenv('GITHUB_TOKEN'),
     'User-Agent': 'STARCODER ANALYSIS APP',
     'X-GitHub-Api-Version': '2022-11-28',
 }
-
+print(f"Processing {len(overlapped_repos)} overlapped repos for commit dates...", overlapped_repos)
 for repo_data in overlapped_repos:
     repo_name = repo_data['repo_name']
     v1_hash = repo_data['v1_hash']
     v2_hash = repo_data['v2_hash']
-
-    # Check language filter first
-    if not has_target_language(repo_name):
-        print(f"Skipping {repo_name} - doesn't have target languages")
+    # print(repo_data)
+    # Check repo filters first
+    if not has_targets(repo_name):
+        print(f"Skipping {repo_name} - doesn't meet filters")
         continue
 
     repo_meta_data = {"repo_name": repo_name,
@@ -173,11 +213,14 @@ for repo_meta_data in repo_dates:
             for pull_request in pull_requests:
                 if pull_request['merged_at']:  # Only include merged pull requests
                     merge_date = datetime.fromisoformat(pull_request['merged_at'].replace('Z', '+00:00'))
-
+                    print(pull_request)
+                    if "bot" in pull_request['user']['login'].lower() or pull_request['user']['type'].lower() == "bot":
+                        print(f"Skipping bots: {pull_request['user']['login']}; {pull_request['html_url']}")
+                        continue 
                     if v1_date < merge_date < v2_date:  # Check if PR is within date range
                         # Check keyword filters
-                        title_ok = has_keywords(pull_request['title'], TITLE_KEYWORDS)
-                        body_ok = has_keywords(pull_request.get('body', ''), BODY_KEYWORDS)
+                        title_ok = True # has_keywords(pull_request['title'], TITLE_KEYWORDS)
+                        body_ok = True # has_keywords(pull_request.get('body', ''), BODY_KEYWORDS)
                         
                         if title_ok or body_ok:  # Include if matches title or body keywords
                             all_merged_prs.append({
@@ -202,13 +245,13 @@ print(f"  Languages: {TARGET_LANGUAGES}")
 print(f"  Language threshold: {LANGUAGE_THRESHOLD}%")
 print(f"  Title keywords: {TITLE_KEYWORDS}")
 print(f"  Body keywords: {BODY_KEYWORDS}")
-print(f"Saving results to filtered_merged_prs.csv")
+print(f"Saving results to filtered_merged_prs2.csv")
 
-with open('filtered_merged_prs.csv', 'w', newline='') as csvfile:
+with open('filtered_merged_prs2.csv', 'w', newline='') as csvfile:
     writer = csv.writer(csvfile)
     writer.writerow(['repo_name', 'pr_number', 'pr_title', 'pr_url', 'merge_date'])
     for pr in all_merged_prs:
         writer.writerow([pr[key] for key in ['repo_name', 'pr_number', 'pr_title', 'pr_url', 'merge_date']])
 
 
-print(f"Finished saving results to filtered_merged_prs.csv")
+print(f"Finished saving results to filtered_merged_prs2.csv")
